@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <base href="/">
+    <title>$fullsend Community Challenge</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        #gameCanvas {
+            display: block;
+        }
+        #score, #highScore, #level {
+            position: absolute;
+            color: #FF0000;
+            font-size: 24px;
+            font-family: Arial, sans-serif;
+            text-shadow: 2px 2px 4px #FFFFFF;
+            left: 10px;
+        }
+        #score { top: 10px; }
+        #highScore { top: 40px; }
+        #level { top: 70px; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="score">Score: 0</div>
+    <div id="highScore">High Score: 0</div>
+    <div id="level">Level: 1</div>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('score');
+        const highScoreDisplay = document.getElementById('highScore');
+        const levelDisplay = document.getElementById('level');
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playSound(frequencies, duration, type = 'square') {
+            const oscillator = audioCtx.createOscillator();
+            oscillator.type = type;
+            if (Array.isArray(frequencies)) {
+                oscillator.frequency.setValueAtTime(frequencies[0], audioCtx.currentTime);
+                oscillator.frequency.linearRampToValueAtTime(frequencies[1], audioCtx.currentTime + duration);
+            } else {
+                oscillator.frequency.setValueAtTime(frequencies, audioCtx.currentTime);
+            }
+            oscillator.connect(audioCtx.destination);
+            oscillator.start();
+            oscillator.stop(audioCtx.currentTime + duration);
+        }
+
+        function playRocketBoost() { playSound([200, 400], 0.2); }
+        function playCoinGrab() { playSound([800, 1000], 0.1, 'sine'); }
+        function playPipePass() { playSound([300, 350], 0.15); }
+        function playCrash() { playSound([200, 150], 0.2, 'sine'); }
+        function playFullSendShout() { playSound([500, 600], 0.3, 'sawtooth'); }
+        function playPowerUp() { playSound([600, 800], 0.2, 'sine'); }
+
+        const profileColors = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF'];
+        const userColor = profileColors[Math.floor(Math.random() * profileColors.length)];
+
+        const rocketSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60">
+            <g transform="rotate(45 30 30)">
+                <rect x="20" y="15" width="20" height="40" fill="${userColor}"/>
+                <polygon points="30,5 40,15 20,15" fill="#FFFFFF"/>
+                <polygon points="20,55 25,65 35,65 40,55" fill="${userColor}"/>
+            </g>
+            <polygon points="10,50 20,40 0,40" fill="#FFA500"/>
+        </svg>`;
+
+        const coinSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20">
+            <circle cx="10" cy="10" r="10" fill="#FFD700"/>
+            <text x="5" y="15" font-size="10" fill="#000000">$</text>
+        </svg>`;
+
+        const powerUpSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20">
+            <circle cx="10" cy="10" r="10" fill="#FF0000"/>
+            <text x="5" y="15" font-size="10" fill="#FFFFFF">$</text>
+        </svg>`;
+
+        const pipeSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="100">
+            <rect width="80" height="100" fill="#C0C0C0"/>
+            <text x="10" y="50" font-size="16" fill="#FF0000">$fullsend</text>
+        </svg>`;
+
+        const rocketImage = new Image();
+        const coinImage = new Image();
+        const powerUpImage = new Image();
+        const pipeImage = new Image();
+
+        rocketImage.src = 'data:image/svg+xml,' + encodeURIComponent(rocketSvg);
+        coinImage.src = 'data:image/svg+xml,' + encodeURIComponent(coinSvg);
+        powerUpImage.src = 'data:image/svg+xml,' + encodeURIComponent(powerUpSvg);
+        pipeImage.src = 'data:image/svg+xml,' + encodeURIComponent(pipeSvg);
+
+        let pipePattern;
+
+        let rocket = {
+            x: 50,
+            y: canvas.height / 2,
+            width: 60,
+            height: 60,
+            velocity: 0,
+            gravity: 0.5,
+            lift: -10,
+            boost: false,
+            boostTimer: 0
+        };
+        let pipes = [];
+        let coins = [];
+        let score = 0;
+        let highScore = localStorage.getItem('highScore') || 0;
+        let level = 1;
+        let coinCount = 0;
+        let pipeStreak = 0;
+        let powerUp = null;
+        highScoreDisplay.textContent = `High Score: ${highScore}`;
+        levelDisplay.textContent = `Level: ${level}`;
+        let gameOver = false;
+        let intro = true;
+        let pipeGap = 300;
+        let pipeSpeed = 2.5;
+        let coinSize = 20;
+        let frame = 0;
+        let stars = Array(50).fill().map(() => ({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            speed: Math.random() * 0.5 + 0.5
+        }));
+
+        canvas.addEventListener('touchstart', (e) => {
+            const touchX = e.touches[0].clientX;
+            const touchY = e.touches[0].clientY;
+            if (intro) {
+                intro = false;
+                playRocketBoost();
+            } else if (!gameOver) {
+                rocket.velocity = rocket.lift;
+                playRocketBoost();
+            } else {
+                const buttonX = canvas.width / 2 - 100;
+                const buttonY = canvas.height / 2 + 200;
+                if (touchX >= buttonX && touchX <= buttonX + 200 && touchY >= buttonY && touchY <= buttonY + 40) {
+                    const tweet = `Just scored ${score} on the $fullsend Community Challenge! Can you beat me? #FullSend`;
+                    console.log('Mock X Post:', tweet);
+                } else {
+                    resetGame();
+                }
+            }
+        });
+
+        class Pipe {
+            constructor(x, height, isTop) {
+                this.x = x;
+                this.height = height;
+                this.isTop = isTop;
+                this.width = 80;
+                this.passed = false;
+            }
+            draw() {
+                ctx.fillStyle = pipePattern;
+                if (this.isTop) {
+                    ctx.fillRect(this.x, 0, this.width, this.height);
+                } else {
+                    ctx.fillRect(this.x, canvas.height - this.height, this.width, this.height);
+                }
+            }
+            update() {
+                this.x -= pipeSpeed;
+            }
+        }
+
+        class Coin {
+            constructor(x, y, isPowerUp = false) {
+                this.x = x;
+                this.y = y;
+                this.isPowerUp = isPowerUp;
+            }
+            draw() {
+                ctx.drawImage(this.isPowerUp ? powerUpImage : coinImage, this.x - coinSize / 2, this.y - coinSize / 2, coinSize, coinSize);
+            }
+            update() {
+                this.x -= pipeSpeed;
+            }
+        }
+
+        function resetGame() {
+            rocket.y = canvas.height / 2;
+            rocket.velocity = 0;
+            rocket.boost = false;
+            rocket.boostTimer = 0;
+            pipes = [];
+            coins = [];
+            score = 0;
+            level = 1;
+            coinCount = 0;
+            pipeStreak = 0;
+            powerUp = null;
+            pipeSpeed = 2.5;
+            pipeGap = 300;
+            scoreDisplay.textContent = `Score: ${score}`;
+            levelDisplay.textContent = `Level: ${level}`;
+            gameOver = false;
+            intro = true;
+            frame = 0;
+            const newColor = profileColors[Math.floor(Math.random() * profileColors.length)];
+            rocketImage.src = 'data:image/svg+xml,' + encodeURIComponent(rocketSvg.replace(/fill="#[^"]*"/g, `fill="${newColor}"`, 2));
+        }
+
+        function generatePipes() {
+            if (frame % 150 === 0) {
+                let minHeight = canvas.height * 0.2;
+                let maxHeight = canvas.height * 0.6;
+                let pipeHeight = Math.random() * (maxHeight - minHeight) + minHeight;
+                pipes.push(new Pipe(canvas.width, pipeHeight, true));
+                pipes.push(new Pipe(canvas.width, canvas.height - pipeHeight - pipeGap, false));
+                let coinY = pipeHeight + pipeGap / 2;
+                const isPowerUp = Math.random() < 0.1;
+                coins.push(new Coin(canvas.width + 80 / 2, coinY, isPowerUp));
+            }
+        }
+
+        function getLevelThreshold(level) {
+            if (level === 1) return 50;
+            if (level === 2) return 100;
+            if (level === 3) return 175;
+            if (level === 4) return 275;
+            return 275 + (level - 4) * 100;
+        }
+
+        function updateLevel() {
+            const threshold = getLevelThreshold(level);
+            if (score >= threshold && (level === 1 || score < getLevelThreshold(level + 1))) {
+                level++;
+                pipeSpeed = 2.5 + (level - 1) * 0.2;
+                pipeGap = level >= 3 ? Math.max(200, 300 - (level - 2) * 20) : 300;
+                levelDisplay.textContent = `Level: ${level}`;
+            }
+        }
+
+        function detectCollision() {
+            if (rocket.y + rocket.height > canvas.height || rocket.y < 0) {
+                gameOver = true;
+                playCrash();
+            }
+            for (let pipe of pipes) {
+                if (
+                    rocket.x + rocket.width > pipe.x &&
+                    rocket.x < pipe.x + pipe.width &&
+                    ((pipe.isTop && rocket.y < pipe.height) || (!pipe.isTop && rocket.y + rocket.height > canvas.height - pipe.height))
+                ) {
+                    gameOver = true;
+                    playCrash();
+                }
+            }
+            for (let i = coins.length - 1; i >= 0; i--) {
+                let coin = coins[i];
+                if (
+                    rocket.x < coin.x + coinSize &&
+                    rocket.x + rocket.width > coin.x &&
+                    rocket.y < coin.y + coinSize &&
+                    rocket.y + rocket.height > coin.y
+                ) {
+                    if (coin.isPowerUp) {
+                        powerUp = Math.random() < 0.5 ? { type: 'double', timer: 600 } : { type: 'slow', timer: 600 };
+                        playPowerUp();
+                    } else {
+                        score += powerUp?.type === 'double' ? 20 : 10;
+                        coinCount += 1;
+                        playCoinGrab();
+                        if (coinCount >= 5) {
+                            rocket.boost = true;
+                            rocket.boostTimer = 200;
+                            coinCount = 0;
+                            playFullSendShout();
+                        }
+                    }
+                    coins.splice(i, 1);
+                }
+            }
+        }
+
+        function updateScore() {
+            for (let pipe of pipes) {
+                if (pipe.x + pipe.width < rocket.x && !pipe.passed) {
+                    pipe.passed = true;
+                    if (!pipe.isTop) {
+                        score += powerUp?.type === 'double' ? 10 : 5;
+                        pipeStreak++;
+                        if (pipeStreak % 3 === 0) {
+                            score += 10;
+                            playCoinGrab();
+                        }
+                        playPipePass();
+                    }
+                }
+            }
+            scoreDisplay.textContent = `Score: ${score}`;
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('highScore', highScore);
+                highScoreDisplay.textContent = `High Score: ${highScore}`;
+            }
+            updateLevel();
+        }
+
+        function drawBackground() {
+            ctx.fillStyle = '#FFFFFF';
+            stars.forEach(star => {
+                ctx.beginPath();
+                ctx.arc(star.x, star.y, 1, 0, Math.PI * 2);
+                ctx.fill();
+                star.x -= star.speed;
+                if (star.x < 0) star.x = canvas.width;
+            });
+        }
+
+        function drawRocket() {
+            if (rocket.boost || powerUp) {
+                ctx.fillStyle = rocket.boost ? '#FF0000' : (powerUp.type === 'double' ? '#FFFF00' : '#00FF00');
+                ctx.beginPath();
+                ctx.arc(rocket.x, rocket.y + 30, 20, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.drawImage(rocketImage, rocket.x, rocket.y, rocket.width, rocket.height);
+        }
+
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawBackground();
+            if (intro) {
+                ctx.fillStyle = '#FF0000';
+                ctx.font = '20px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('$FULLSEND COMMUNITY CHALLENGE', canvas.width / 2, canvas.height / 2 - 10);
+                ctx.fillStyle = '#FFFFFF';
+                ctx.font = '16px Arial';
+                ctx.fillText('Tap to Launch Your Rocket', canvas.width / 2, canvas.height / 2 + 20);
+                ctx.textAlign = 'left';
+            } else if (!gameOver) {
+                rocket.velocity += rocket.gravity;
+                rocket.y += rocket.velocity;
+                if (rocket.boost) {
+                    rocket.velocity -= 0.2;
+                    pipeGap = 350;
+                    rocket.boostTimer--;
+                    if (rocket.boostTimer <= 0) rocket.boost = false;
+                }
+                if (powerUp) {
+                    if (powerUp.type === 'slow') pipeSpeed = 1.5;
+                    powerUp.timer--;
+                    if (powerUp.timer <= 0) {
+                        powerUp = null;
+                        pipeSpeed = 2.5 + (level - 1) * 0.2;
+                    }
+                }
+                generatePipes();
+                for (let pipe of pipes) {
+                    pipe.update();
+                    pipe.draw();
+                }
+                for (let coin of coins) {
+                    coin.update();
+                    coin.draw();
+                }
+                drawRocket();
+                detectCollision();
+                updateScore();
+                pipes = pipes.filter(pipe => pipe.x + pipe.width > 0);
+                coins = coins.filter(coin => coin.x + coinSize > 0);
+                frame++;
+            } else {
+                ctx.fillStyle = '#FF0000';
+                ctx.font = '30px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('Game Over', canvas.width / 2, canvas.height / 2);
+                ctx.fillStyle = '#FFFFFF';
+                ctx.font = '20px Arial';
+                ctx.fillText('Tap to Restart', canvas.width / 2, canvas.height / 2 + 40);
+                ctx.fillText('Top $fullsend Scores:', canvas.width / 2, canvas.height / 2 + 80);
+                ctx.fillText('1. @FullSendFan - 420', canvas.width / 2, canvas.height / 2 + 110);
+                ctx.fillText('2. @NelkBoyz - 350', canvas.width / 2, canvas.height / 2 + 140);
+                ctx.fillText('3. @SendIt69 - 300', canvas.width / 2, canvas.height / 2 + 170);
+                ctx.fillStyle = '#FF0000';
+                ctx.fillRect(canvas.width / 2 - 100, canvas.height / 2 + 200, 200, 40);
+                ctx.fillStyle = '#FFFFFF';
+                ctx.font = '16px Arial';
+                ctx.fillText('Post Score to X', canvas.width / 2, canvas.height / 2 + 225);
+                ctx.textAlign = 'left';
+            }
+            requestAnimationFrame(gameLoop);
+        }
+
+        pipeImage.onload = function() {
+            pipePattern = ctx.createPattern(pipeImage, 'repeat');
+            requestAnimationFrame(gameLoop);
+        };
+    </script>
+</body>
+</html>
