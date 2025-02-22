@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <base href="/">
     <title>$fullsend Community Challenge</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@1,700&display=swap" rel="stylesheet">
     <style>
         body {
             margin: 0;
@@ -42,7 +43,7 @@
     <div id="lives">Lives: 3</div>
     <script>
         const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { alpha: false });
         const scoreDisplay = document.getElementById('score');
         const highScoreDisplay = document.getElementById('highScore');
         const levelDisplay = document.getElementById('level');
@@ -62,6 +63,10 @@
 
         function playSound(frequencies, duration, type = 'square') {
             ensureAudioContext();
+            const gainNode = audioCtx.createGain();
+            gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gainNode.connect(audioCtx.destination);
+
             const oscillator = audioCtx.createOscillator();
             oscillator.type = type;
             if (Array.isArray(frequencies)) {
@@ -70,7 +75,7 @@
             } else {
                 oscillator.frequency.setValueAtTime(frequencies, audioCtx.currentTime);
             }
-            oscillator.connect(audioCtx.destination);
+            oscillator.connect(gainNode);
             oscillator.start();
             oscillator.stop(audioCtx.currentTime + duration);
         }
@@ -141,12 +146,12 @@
 
         const pipeSvgInitial = `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="100">
             <rect width="80" height="100" fill="#C0C0C0"/>
-            <text x="5" y="55" font-size="18" font-family="Impact, sans-serif" font-weight="bold" fill="#FF0000">$FullSend</text>
+            <text x="5" y="55" font-size="14" font-family="'Montserrat', sans-serif" font-weight="bold" font-style="italic" fill="#FF0000">$FullSend</text>
         </svg>`;
 
         const pipeSvgRed = `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="100">
             <rect width="80" height="100" fill="#FF0000"/>
-            <text x="5" y="55" font-size="18" font-family="Impact, sans-serif" font-weight="bold" fill="#000000">$FullSend</text>
+            <text x="5" y="55" font-size="14" font-family="'Montserrat', sans-serif" font-weight="bold" font-style="italic" fill="#000000">$FullSend</text>
         </svg>`;
 
         const ufoImage = new Image();
@@ -221,7 +226,7 @@
 
         function createParticles(x, y, type) {
             const count = type === 'crash' ? 20 : 10;
-            if (particles.length + count > 200) return; // Cap at 200 particles
+            if (particles.length + count > 100) return;
             for (let i = 0; i < count; i++) {
                 particles.push({
                     x: x,
@@ -246,22 +251,23 @@
         }
 
         function drawParticles() {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
             particles.forEach(p => {
-                ctx.fillStyle = p.color;
                 ctx.beginPath();
                 ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fillStyle = p.color;
                 ctx.fill();
             });
         }
 
-        function handleInput(event) {
+        function handleMobileInput(event) {
             event.preventDefault();
             const currentTime = Date.now();
             if (currentTime - lastInputTime < 200) return;
             lastInputTime = currentTime;
 
-            const x = event.type === 'touchstart' ? event.touches[0].clientX : event.clientX;
-            const y = event.type === 'touchstart' ? event.touches[0].clientY : event.clientY;
+            const x = event.touches[0].clientX;
+            const y = event.touches[0].clientY;
 
             if (intro) {
                 intro = false;
@@ -271,30 +277,39 @@
                 playRocketBoost();
             } else {
                 const buttonWidth = 220;
-                const playAgainX = Math.floor(canvas.width / 2) - Math.floor(buttonWidth / 2);
+                const centerX = canvas.width / 2 - buttonWidth / 2;
                 const playAgainY = canvas.height / 2 + 50;
-                const postScoreX = Math.floor(canvas.width / 2) - Math.floor(buttonWidth / 2);
                 const postScoreY = canvas.height / 2 + 150;
 
-                if (x >= playAgainX && x <= playAgainX + buttonWidth && y >= playAgainY && y <= playAgainY + 40) {
+                if (x >= centerX && x <= centerX + buttonWidth && y >= playAgainY && y <= playAgainY + 40) {
                     resetGame();
-                } else if (x >= postScoreX && x <= postScoreX + buttonWidth && y >= postScoreY && y <= postScoreY + 40) {
+                } else if (x >= centerX && x <= centerX + buttonWidth && y >= postScoreY && y <= postScoreY + 40) {
                     const tweet = `Just scored ${score} on the $fullsend Community Challenge! Can you beat me? #FullSend`;
                     console.log('Mock X Post:', tweet);
                 }
             }
         }
 
-        canvas.addEventListener('touchstart', handleInput, { passive: false });
-        canvas.addEventListener('click', (e) => {
-            if (e.isTrusted) handleInput(e);
-        }, { passive: false });
-        window.addEventListener('keydown', (e) => {
-            if (e.code === 'Space') {
-                e.preventDefault();
-                handleInput(e);
+        function handleDesktopInput(event) {
+            if (event.code !== 'Space') return;
+            event.preventDefault();
+            const currentTime = Date.now();
+            if (currentTime - lastInputTime < 100) return;
+            lastInputTime = currentTime;
+
+            if (intro) {
+                intro = false;
+                playRocketBoost();
+            } else if (!gameOver) {
+                ufo.velocity = ufo.lift;
+                playRocketBoost();
+            } else {
+                resetGame();
             }
-        }, { passive: false });
+        }
+
+        canvas.addEventListener('touchstart', handleMobileInput, { passive: false });
+        window.addEventListener('keydown', handleDesktopInput, { passive: false });
 
         class Obstacle {
             constructor(x, height, isTop) {
@@ -324,13 +339,9 @@
                 this.type = type;
             }
             draw() {
-                if (this.type === 'heart') {
-                    ctx.drawImage(heartImage, this.x - coinSize / 2, this.y - coinSize / 2, coinSize, coinSize);
-                } else if (this.type === 'powerUp') {
-                    ctx.drawImage(powerUpImage, this.x - coinSize / 2, this.y - coinSize / 2, coinSize, coinSize);
-                } else {
-                    ctx.drawImage(coinImage, this.x - coinSize / 2, this.y - coinSize / 2, coinSize, coinSize);
-                }
+                const img = this.type === 'heart' ? heartImage : 
+                          this.type === 'powerUp' ? powerUpImage : coinImage;
+                ctx.drawImage(img, this.x - coinSize / 2, this.y - coinSize / 2, coinSize, coinSize);
             }
             update() {
                 this.x -= pipeSpeed;
@@ -594,8 +605,8 @@
                 ctx.arc(ufo.x + 30, ufo.y + 40, 20, 0, Math.PI * 2);
                 ctx.fill();
 
-                if (ufo.boost) {
-                    for (let i = 0; i < 5; i++) {
+                if (ufo.boost && frame % 2 === 0) {
+                    for (let i = 0; i < 3; i++) {
                         particles.push({
                             x: ufo.x + ufo.width / 2,
                             y: ufo.y + ufo.height / 2,
@@ -622,9 +633,15 @@
             ctx.textAlign = 'left';
         }
 
-        function gameLoop() {
+        let lastFrameTime = 0;
+        function gameLoop(timestamp) {
+            if (!lastFrameTime) lastFrameTime = timestamp;
+            const deltaTime = Math.min(timestamp - lastFrameTime, 100);
+            lastFrameTime = timestamp;
+
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             drawBackground();
+            
             if (intro) {
                 ctx.fillStyle = '#FF0000';
                 ctx.font = '20px Arial';
@@ -632,34 +649,34 @@
                 ctx.fillText('$FULLSEND COMMUNITY CHALLENGE', canvas.width / 2, canvas.height / 2 - 10);
                 ctx.fillStyle = '#FFFFFF';
                 ctx.font = '16px Arial';
-                ctx.fillText('Tap or Click to Launch Your UFO (Spacebar on Desktop)', canvas.width / 2, canvas.height / 2 + 20);
+                ctx.fillText(window.innerWidth < 768 ? 'Tap to Launch Your UFO' : 'Press Spacebar to Launch Your UFO', canvas.width / 2, canvas.height / 2 + 20);
                 ctx.textAlign = 'left';
             } else if (!gameOver) {
-                ufo.velocity += ufo.gravity;
-                ufo.y += ufo.velocity;
+                ufo.velocity += ufo.gravity * (deltaTime / 16.67);
+                ufo.y += ufo.velocity * (deltaTime / 16.67);
                 if (ufo.boost) {
-                    ufo.velocity -= 0.2;
+                    ufo.velocity -= 0.2 * (deltaTime / 16.67);
                     pipeGap = 350;
-                    ufo.boostTimer--;
+                    ufo.boostTimer -= (deltaTime / 16.67);
                     if (ufo.boostTimer <= 0) ufo.boost = false;
                 }
                 if (powerUp) {
                     if (powerUp.type === 'slow') pipeSpeed = 1.5;
-                    powerUp.timer--;
+                    powerUp.timer -= (deltaTime / 16.67);
                     if (powerUp.timer <= 0 && powerUp.type !== 'blast') {
                         powerUp = null;
                         pipeSpeed = 2.5 + (level - 1) * 0.2;
                     }
                 }
                 generateObstacles();
-                for (let obstacle of obstacles) {
+                obstacles.forEach(obstacle => {
                     obstacle.update();
                     obstacle.draw();
-                }
-                for (let coin of coins) {
+                });
+                coins.forEach(coin => {
                     coin.update();
                     coin.draw();
-                }
+                });
                 drawUFO();
                 detectCollision();
                 updateScore();
@@ -676,26 +693,25 @@
                 drawMockLeaderboard();
 
                 const buttonWidth = 220;
-                const playAgainX = Math.floor(canvas.width / 2) - Math.floor(buttonWidth / 2);
+                const centerX = canvas.width / 2 - buttonWidth / 2;
                 const playAgainY = canvas.height / 2 + 50;
-                const postScoreX = Math.floor(canvas.width / 2) - Math.floor(buttonWidth / 2);
                 const postScoreY = canvas.height / 2 + 150;
 
                 ctx.fillStyle = '#FF0000';
-                ctx.fillRect(playAgainX, playAgainY, buttonWidth, 40);
+                ctx.fillRect(centerX, playAgainY, buttonWidth, 40);
                 ctx.strokeStyle = '#000000';
                 ctx.lineWidth = 2;
-                ctx.strokeRect(playAgainX, playAgainY, buttonWidth, 40);
+                ctx.strokeRect(centerX, playAgainY, buttonWidth, 40);
                 ctx.fillStyle = '#FFFFFF';
                 ctx.font = '20px Impact, sans-serif';
                 ctx.textAlign = 'center';
                 ctx.fillText('PLAY AGAIN', canvas.width / 2, playAgainY + 28);
 
                 ctx.fillStyle = '#FF0000';
-                ctx.fillRect(postScoreX, postScoreY, buttonWidth, 40);
+                ctx.fillRect(centerX, postScoreY, buttonWidth, 40);
                 ctx.strokeStyle = '#000000';
                 ctx.lineWidth = 2;
-                ctx.strokeRect(postScoreX, postScoreY, buttonWidth, 40);
+                ctx.strokeRect(centerX, postScoreY, buttonWidth, 40);
                 ctx.fillStyle = '#FFFFFF';
                 ctx.font = '20px Impact, sans-serif';
                 ctx.fillText('POST SCORE TO X', canvas.width / 2, postScoreY + 28);
