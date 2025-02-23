@@ -15,19 +15,24 @@
             justify-content: center;
             align-items: center;
             height: 100vh;
+            overscroll-behavior: none;
+            -webkit-user-select: none; /* Prevent text selection on mobile */
+            user-select: none;
         }
         #gameCanvas {
             display: block;
             width: 100%;
             height: 100%;
+            touch-action: none;
         }
         #score, #highScore, #level, #lives {
             position: absolute;
             color: #FF0000;
-            font-size: 24px;
+            font-size: clamp(16px, 2vw, 24px);
             font-family: Arial, sans-serif;
             text-shadow: 2px 2px 4px #FFFFFF;
             left: 10px;
+            pointer-events: none;
         }
         #score { top: 10px; }
         #highScore { top: 40px; }
@@ -42,6 +47,8 @@
     <div id="level">Level: 1</div>
     <div id="lives">Lives: 3</div>
     <script>
+        'use strict';
+
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d', { alpha: false });
         const scoreDisplay = document.getElementById('score');
@@ -80,13 +87,13 @@
             oscillator.stop(audioCtx.currentTime + duration);
         }
 
-        function playRocketBoost() { playSound([200, 400], 0.2); }
-        function playCoinGrab() { playSound([800, 1000], 0.1, 'sine'); }
-        function playPipePass() { playSound([300, 350], 0.15); }
-        function playCrash() { playSound([200, 150], 0.2, 'sine'); }
-        function playFullSendShout() { playSound([500, 600], 0.3, 'sawtooth'); }
-        function playPowerUp() { playSound([600, 800], 0.2, 'sine'); }
-        function playHeartGrab() { playSound([700, 900], 0.15, 'triangle'); }
+        const playRocketBoost = () => playSound([200, 400], 0.2);
+        const playCoinGrab = () => playSound([800, 1000], 0.1, 'sine');
+        const playPipePass = () => playSound([300, 350], 0.15);
+        const playCrash = () => playSound([200, 150], 0.2, 'sine');
+        const playFullSendShout = () => playSound([500, 600], 0.3, 'sawtooth');
+        const playPowerUp = () => playSound([600, 800], 0.2, 'sine');
+        const playHeartGrab = () => playSound([700, 900], 0.15, 'triangle');
 
         const profileColors = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF'];
         let userColor = profileColors[Math.floor(Math.random() * profileColors.length)];
@@ -168,8 +175,7 @@
         pipeImageInitial.src = 'data:image/svg+xml,' + encodeURIComponent(pipeSvgInitial);
         pipeImageRed.src = 'data:image/svg+xml,' + encodeURIComponent(pipeSvgRed);
 
-        let pipePatternInitial;
-        let pipePatternRed;
+        let pipePatternInitial, pipePatternRed;
 
         let ufo = {
             x: 50,
@@ -180,7 +186,10 @@
             gravity: 0.5,
             lift: -10,
             boost: false,
-            boostTimer: 0
+            boostTimer: 0,
+            invincible: false,
+            invincibleTimer: 0,
+            invincibleCount: 0
         };
         let obstacles = [];
         let coins = [];
@@ -219,9 +228,9 @@
         }));
 
         const mockLeaders = [
-            ['@john', 420],
-            ['@kriscustoms_', 350],
-            ['@fullsend', 300]
+            ['@Jxquu', 2390],
+            ['@BecsterCrypto', 1375],
+            ['@KrisCustoms_', 1140]
         ];
 
         function createParticles(x, y, type) {
@@ -229,8 +238,7 @@
             if (particles.length + count > 100) return;
             for (let i = 0; i < count; i++) {
                 particles.push({
-                    x: x,
-                    y: y,
+                    x, y,
                     vx: (Math.random() - 0.5) * 4,
                     vy: (Math.random() - 0.5) * 4,
                     life: type === 'crash' ? 30 : 20,
@@ -251,7 +259,6 @@
         }
 
         function drawParticles() {
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
             particles.forEach(p => {
                 ctx.beginPath();
                 ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
@@ -266,8 +273,9 @@
             if (currentTime - lastInputTime < 200) return;
             lastInputTime = currentTime;
 
-            const x = event.touches[0].clientX;
-            const y = event.touches[0].clientY;
+            const touch = event.touches[0];
+            const x = touch.clientX;
+            const y = touch.clientY;
 
             if (intro) {
                 intro = false;
@@ -277,13 +285,16 @@
                 playRocketBoost();
             } else {
                 const buttonWidth = 220;
+                const buttonHeight = 40;
                 const centerX = canvas.width / 2 - buttonWidth / 2;
                 const playAgainY = canvas.height / 2 + 50;
                 const postScoreY = canvas.height / 2 + 150;
 
-                if (x >= centerX && x <= centerX + buttonWidth && y >= playAgainY && y <= playAgainY + 40) {
+                if (x >= centerX && x <= centerX + buttonWidth && 
+                    y >= playAgainY && y <= playAgainY + buttonHeight) {
                     resetGame();
-                } else if (x >= centerX && x <= centerX + buttonWidth && y >= postScoreY && y <= postScoreY + 40) {
+                } else if (x >= centerX && x <= centerX + buttonWidth && 
+                         y >= postScoreY && y <= postScoreY + buttonHeight) {
                     const tweet = `Just scored ${score} on the $fullsend Community Challenge! Can you beat me? #FullSend`;
                     console.log('Mock X Post:', tweet);
                 }
@@ -309,7 +320,7 @@
         }
 
         canvas.addEventListener('touchstart', handleMobileInput, { passive: false });
-        window.addEventListener('keydown', handleDesktopInput, { passive: false });
+        window.addEventListener('keydown', handleDesktopInput);
 
         class Obstacle {
             constructor(x, height, isTop) {
@@ -340,7 +351,7 @@
             }
             draw() {
                 const img = this.type === 'heart' ? heartImage : 
-                          this.type === 'powerUp' ? powerUpImage : coinImage;
+                           this.type === 'powerUp' ? powerUpImage : coinImage;
                 ctx.drawImage(img, this.x - coinSize / 2, this.y - coinSize / 2, coinSize, coinSize);
             }
             update() {
@@ -349,10 +360,20 @@
         }
 
         function resetGame() {
-            ufo.y = canvas.height / 2;
-            ufo.velocity = 0;
-            ufo.boost = false;
-            ufo.boostTimer = 0;
+            ufo = {
+                x: 50,
+                y: canvas.height / 2,
+                width: 60,
+                height: 60,
+                velocity: 0,
+                gravity: 0.5,
+                lift: -10,
+                boost: false,
+                boostTimer: 0,
+                invincible: false,
+                invincibleTimer: 0,
+                invincibleCount: 0
+            };
             obstacles = [];
             coins = [];
             particles = [];
@@ -403,12 +424,12 @@
 
         function generateObstacles() {
             if (frame % 150 === 0) {
-                let minHeight = canvas.height * 0.2;
-                let maxHeight = canvas.height * 0.6;
-                let pipeHeight = Math.random() * (maxHeight - minHeight) + minHeight;
+                const minHeight = canvas.height * 0.2;
+                const maxHeight = canvas.height * 0.6;
+                const pipeHeight = Math.random() * (maxHeight - minHeight) + minHeight;
                 obstacles.push(new Obstacle(canvas.width, pipeHeight, true));
                 obstacles.push(new Obstacle(canvas.width, canvas.height - pipeHeight - pipeGap, false));
-                let coinY = pipeHeight + pipeGap / 2;
+                const coinY = pipeHeight + pipeGap / 2;
                 const rand = Math.random();
                 if (rand < 0.1) {
                     coins.push(new Coin(canvas.width + 80 / 2, coinY, 'powerUp'));
@@ -438,16 +459,68 @@
             }
         }
 
+        function checkInvincibility() {
+            const nextThreshold = 250 * (ufo.invincibleCount + 1);
+            if (score >= nextThreshold && !ufo.invincible && !powerUp) {
+                ufo.invincible = true;
+                ufo.invincibleCount++;
+                ufo.invincibleTimer = 900;
+                playPowerUp();
+            }
+            if (ufo.invincible) {
+                ufo.invincibleTimer--;
+                if (ufo.invincibleTimer <= 0) {
+                    ufo.invincible = false;
+                }
+            }
+        }
+
         function detectCollision() {
             if (frame === lastCollisionFrame) return;
 
-            let collisionDetected = false;
-
-            if (ufo.y + ufo.height > canvas.height || ufo.y < 0) {
-                collisionDetected = true;
+            for (let i = coins.length - 1; i >= 0; i--) {
+                const coin = coins[i];
+                if (
+                    ufo.x < coin.x + coinSize &&
+                    ufo.x + ufo.width > coin.x &&
+                    ufo.y < coin.y + coinSize &&
+                    ufo.y + ufo.height > coin.y
+                ) {
+                    if (coin.type === 'powerUp') {
+                        const rand = Math.random();
+                        if (rand < 0.33) powerUp = { type: 'double', timer: 600 };
+                        else if (rand < 0.66) powerUp = { type: 'slow', timer: 600 };
+                        else if (rand < 0.83) powerUp = { type: 'shield', timer: 300 };
+                        else powerUp = { type: 'blast', timer: 1 };
+                        playPowerUp();
+                        createParticles(coin.x, coin.y, 'coin');
+                    } else if (coin.type === 'heart' && lives < maxLives) {
+                        lives++;
+                        livesDisplay.textContent = `Lives: ${lives}`;
+                        playHeartGrab();
+                        createParticles(coin.x, coin.y, 'heart');
+                    } else if (coin.type === 'coin') {
+                        score += powerUp?.type === 'double' ? 20 : 10;
+                        coinCount++;
+                        playCoinGrab();
+                        createParticles(coin.x, coin.y, 'coin');
+                        if (coinCount >= 5) {
+                            ufo.boost = true;
+                            ufo.boostTimer = 200;
+                            coinCount = 0;
+                            playFullSendShout();
+                        }
+                    }
+                    coins.splice(i, 1);
+                }
             }
 
-            for (let obstacle of obstacles) {
+            if (ufo.invincible) return;
+
+            let collisionDetected = false;
+            if (ufo.y + ufo.height > canvas.height || ufo.y < 0) collisionDetected = true;
+
+            for (const obstacle of obstacles) {
                 if (
                     ufo.x + ufo.width > obstacle.x &&
                     ufo.x < obstacle.x + obstacle.width &&
@@ -470,6 +543,7 @@
                     livesDisplay.textContent = `Lives: ${lives}`;
                     ufo.y = canvas.height / 2;
                     ufo.velocity = 0;
+                    obstacles = obstacles.filter(o => o.x + o.width < ufo.x);
                     createParticles(ufo.x + ufo.width / 2, ufo.y + ufo.height / 2, 'crash');
                     playCrash();
                 } else {
@@ -481,48 +555,6 @@
                 }
             }
 
-            for (let i = coins.length - 1; i >= 0; i--) {
-                let coin = coins[i];
-                if (
-                    ufo.x < coin.x + coinSize &&
-                    ufo.x + ufo.width > coin.x &&
-                    ufo.y < coin.y + coinSize &&
-                    ufo.y + ufo.height > coin.y
-                ) {
-                    if (coin.type === 'powerUp') {
-                        const rand = Math.random();
-                        if (rand < 0.33) {
-                            powerUp = { type: 'double', timer: 600 };
-                        } else if (rand < 0.66) {
-                            powerUp = { type: 'slow', timer: 600 };
-                        } else if (rand < 0.83) {
-                            powerUp = { type: 'shield', timer: 300 };
-                        } else {
-                            powerUp = { type: 'blast', timer: 1 };
-                        }
-                        playPowerUp();
-                        createParticles(coin.x, coin.y, 'coin');
-                    } else if (coin.type === 'heart' && lives < maxLives) {
-                        lives++;
-                        livesDisplay.textContent = `Lives: ${lives}`;
-                        playHeartGrab();
-                        createParticles(coin.x, coin.y, 'heart');
-                    } else if (coin.type === 'coin') {
-                        score += powerUp?.type === 'double' ? 20 : 10;
-                        coinCount += 1;
-                        playCoinGrab();
-                        createParticles(coin.x, coin.y, 'coin');
-                        if (coinCount >= 5) {
-                            ufo.boost = true;
-                            ufo.boostTimer = 200;
-                            coinCount = 0;
-                            playFullSendShout();
-                        }
-                    }
-                    coins.splice(i, 1);
-                }
-            }
-
             if (powerUp && powerUp.type === 'blast' && powerUp.timer > 0) {
                 obstacles = [];
                 powerUp.timer--;
@@ -531,7 +563,7 @@
         }
 
         function updateScore() {
-            for (let obstacle of obstacles) {
+            for (const obstacle of obstacles) {
                 if (obstacle.x + obstacle.width < ufo.x && !obstacle.passed) {
                     obstacle.passed = true;
                     if (!obstacle.isTop) {
@@ -550,14 +582,10 @@
                 highScore = score;
                 localStorage.setItem('highScore', highScore);
                 highScoreDisplay.textContent = `High Score: ${highScore}`;
-                if (score >= 1000 || (score >= 500 && highScore < 1000)) {
-                    updateUfoImage();
-                }
+                if (score >= 1000 || (score >= 500 && highScore < 1000)) updateUfoImage();
             }
             updateLevel();
-            if (score > 0 && score % 200 === 0) {
-                resetBackground();
-            }
+            if (score > 0 && score % 200 === 0) resetBackground();
         }
 
         function drawBackground() {
@@ -595,11 +623,12 @@
         }
 
         function drawUFO() {
-            if (ufo.boost || powerUp) {
+            if (ufo.boost || powerUp || ufo.invincible) {
                 const effectColor = ufo.boost ? '#FF0000' : 
-                                   powerUp.type === 'double' ? '#FFFF00' : 
-                                   powerUp.type === 'slow' ? '#00FF00' : 
-                                   powerUp.type === 'shield' ? '#00FFFF' : '#FFFFFF';
+                                   powerUp?.type === 'double' ? '#FFFF00' : 
+                                   powerUp?.type === 'slow' ? '#00FF00' : 
+                                   powerUp?.type === 'shield' ? '#00FFFF' : 
+                                   ufo.invincible ? '#FFFFFF' : '#FFFFFF';
                 ctx.fillStyle = effectColor;
                 ctx.beginPath();
                 ctx.arc(ufo.x + 30, ufo.y + 40, 20, 0, Math.PI * 2);
@@ -641,10 +670,10 @@
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             drawBackground();
-            
+
             if (intro) {
                 ctx.fillStyle = '#FF0000';
-                ctx.font = '20px Arial';
+                ctx.font = "22px 'Montserrat', sans-serif";
                 ctx.textAlign = 'center';
                 ctx.fillText('$FULLSEND COMMUNITY CHALLENGE', canvas.width / 2, canvas.height / 2 - 10);
                 ctx.fillStyle = '#FFFFFF';
@@ -668,6 +697,7 @@
                         pipeSpeed = 2.5 + (level - 1) * 0.2;
                     }
                 }
+                checkInvincibility();
                 generateObstacles();
                 obstacles.forEach(obstacle => {
                     obstacle.update();
@@ -693,41 +723,49 @@
                 drawMockLeaderboard();
 
                 const buttonWidth = 220;
+                const buttonHeight = 40;
                 const centerX = canvas.width / 2 - buttonWidth / 2;
                 const playAgainY = canvas.height / 2 + 50;
                 const postScoreY = canvas.height / 2 + 150;
 
                 ctx.fillStyle = '#FF0000';
-                ctx.fillRect(centerX, playAgainY, buttonWidth, 40);
+                ctx.fillRect(centerX, playAgainY, buttonWidth, buttonHeight);
                 ctx.strokeStyle = '#000000';
                 ctx.lineWidth = 2;
-                ctx.strokeRect(centerX, playAgainY, buttonWidth, 40);
+                ctx.strokeRect(centerX, playAgainY, buttonWidth, buttonHeight);
                 ctx.fillStyle = '#FFFFFF';
                 ctx.font = '20px Impact, sans-serif';
-                ctx.textAlign = 'center';
-                ctx.fillText('PLAY AGAIN', canvas.width / 2, playAgainY + 28);
+                ctx.textBaseline = 'middle'; // Ensure vertical centering
+                ctx.fillText('PLAY AGAIN', canvas.width / 2, playAgainY + buttonHeight / 2);
 
                 ctx.fillStyle = '#FF0000';
-                ctx.fillRect(centerX, postScoreY, buttonWidth, 40);
+                ctx.fillRect(centerX, postScoreY, buttonWidth, buttonHeight);
                 ctx.strokeStyle = '#000000';
                 ctx.lineWidth = 2;
-                ctx.strokeRect(centerX, postScoreY, buttonWidth, 40);
+                ctx.strokeRect(centerX, postScoreY, buttonWidth, buttonHeight);
                 ctx.fillStyle = '#FFFFFF';
                 ctx.font = '20px Impact, sans-serif';
-                ctx.fillText('POST SCORE TO X', canvas.width / 2, postScoreY + 28);
+                ctx.fillText('POST SCORE TO X', canvas.width / 2, postScoreY + buttonHeight / 2);
 
+                ctx.textBaseline = 'alphabetic'; // Reset to default
                 ctx.textAlign = 'left';
             }
             requestAnimationFrame(gameLoop);
         }
 
-        pipeImageInitial.onload = function() {
+        pipeImageInitial.onload = () => {
             pipePatternInitial = ctx.createPattern(pipeImageInitial, 'repeat');
-            pipeImageRed.onload = function() {
+            pipeImageRed.onload = () => {
                 pipePatternRed = ctx.createPattern(pipeImageRed, 'repeat');
                 requestAnimationFrame(gameLoop);
             };
         };
+
+        // Preload images to avoid delays
+        [ufoImage, coinImage, powerUpImage, heartImage, pipeImageInitial, pipeImageRed].forEach(img => {
+            img.onload = () => {};
+            img.onerror = () => console.error(`Failed to load image: ${img.src}`);
+        });
     </script>
 </body>
 </html>
