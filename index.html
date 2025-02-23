@@ -16,7 +16,7 @@
             align-items: center;
             height: 100vh;
             overscroll-behavior: none;
-            -webkit-user-select: none; /* Prevent text selection on mobile */
+            -webkit-user-select: none;
             user-select: none;
         }
         #gameCanvas {
@@ -735,7 +735,7 @@
                 ctx.strokeRect(centerX, playAgainY, buttonWidth, buttonHeight);
                 ctx.fillStyle = '#FFFFFF';
                 ctx.font = '20px Impact, sans-serif';
-                ctx.textBaseline = 'middle'; // Ensure vertical centering
+                ctx.textBaseline = 'middle';
                 ctx.fillText('PLAY AGAIN', canvas.width / 2, playAgainY + buttonHeight / 2);
 
                 ctx.fillStyle = '#FF0000';
@@ -747,25 +747,30 @@
                 ctx.font = '20px Impact, sans-serif';
                 ctx.fillText('POST SCORE TO X', canvas.width / 2, postScoreY + buttonHeight / 2);
 
-                ctx.textBaseline = 'alphabetic'; // Reset to default
+                ctx.textBaseline = 'alphabetic';
                 ctx.textAlign = 'left';
             }
             requestAnimationFrame(gameLoop);
         }
 
-        pipeImageInitial.onload = () => {
-            pipePatternInitial = ctx.createPattern(pipeImageInitial, 'repeat');
-            pipeImageRed.onload = () => {
+        // Ensure patterns are set before game loop starts
+        let imagesLoaded = 0;
+        const totalImages = 2; // Only pipe images need patterns
+        function handleImageLoad() {
+            imagesLoaded++;
+            if (imagesLoaded === totalImages) {
+                pipePatternInitial = ctx.createPattern(pipeImageInitial, 'repeat');
                 pipePatternRed = ctx.createPattern(pipeImageRed, 'repeat');
                 requestAnimationFrame(gameLoop);
-            };
-        };
+            }
+        }
 
-        // Preload images to avoid delays
-        [ufoImage, coinImage, powerUpImage, heartImage, pipeImageInitial, pipeImageRed].forEach(img => {
-            img.onload = () => {};
-            img.onerror = () => console.error(`Failed to load image: ${img.src}`);
-        });
+        pipeImageInitial.onload = handleImageLoad;
+        pipeImageRed.onload = handleImageLoad;
+
+        // Error handling for image loading
+        pipeImageInitial.onerror = () => console.error('Failed to load pipeImageInitial');
+        pipeImageRed.onerror = () => console.error('Failed to load pipeImageRed');
     </script>
 </body>
 </html>
